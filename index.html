@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0806" />
+<title>Monster Shadow Theatre</title>
+<meta name="description" content="Four paper monsters you can drag around like shadow puppets, over your own camera image." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230c0a09'/%3E%3Ccircle cx='11' cy='14' r='3' fill='%23ffcf8b'/%3E%3Ccircle cx='21' cy='14' r='3' fill='%23ffcf8b'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <main id="stage" class="stage no-cam" aria-label="Shadow puppet stage">
+    <div class="wall"></div>
+    <video id="cam" playsinline webkit-playsinline muted autoplay></video>
+    <div class="glow"></div>
+
+    <!-- puppets are injected here -->
+    <div id="puppets" class="puppets"></div>
+
+    <svg id="rig" class="rig" aria-hidden="true">
+      <g id="strings" class="strings"></g>
+      <g id="handmarks" class="handmarks"></g>
+    </svg>
+
+    <div class="grain"></div>
+    <div class="vignette"></div>
+  </main>
+
+  <header class="hud">
+    <div class="brand">
+      <span class="lamp" aria-hidden="true"></span>
+      <h1>Shadow Theatre</h1>
+      <p>four monsters &middot; one lamp &middot; your camera</p>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite">
+      <span id="statusCam">camera off</span>
+      <span class="sep">/</span>
+      <span id="statusHands">hands off</span>
+    </div>
+  </header>
+
+  <p id="hint" class="hint">
+    <strong>Drag</strong> a monster &middot; move to be looked at &middot; <strong>double&#8209;tap</strong> to spin
+  </p>
+
+  <nav class="bar" aria-label="Controls">
+    <button class="btn" id="btnCam" type="button" aria-pressed="false" title="Camera (C)">
+      <span class="dot"></span><span class="label">Camera</span>
+    </button>
+    <button class="btn" id="btnLight" type="button" aria-pressed="false" title="Shadow / spirit look (S)">
+      <span class="dot"></span><span class="label" id="btnLightLabel">Shadow</span>
+    </button>
+    <button class="btn" id="btnHands" type="button" aria-pressed="false" title="Hand tracking (H)">
+      <span class="dot"></span><span class="label">Hands</span>
+    </button>
+    <button class="btn" id="btnSound" type="button" aria-pressed="true" title="Sound (M)">
+      <span class="dot"></span><span class="label" id="btnSoundLabel">Sound on</span>
+    </button>
+    <button class="btn" id="btnReset" type="button" title="Reset stage (R)">
+      <span class="dot"></span><span class="label">Reset</span>
+    </button>
+  </nav>
+
+  <div id="intro" class="intro" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="card">
+      <p class="kicker">a tiny theatre for four monsters</p>
+      <h2 id="introTitle">Monster<br />Shadow Theatre</h2>
+      <p class="lede">
+        Turn on your camera and the room becomes a lit screen. The four creatures are
+        rigged like little 2D actors — they breathe, blink, and their heads follow your
+        hands. Pick one up, fling it, and it swings on its strings.
+      </p>
+      <ul class="tips">
+        <li><b>Wave</b> at a monster and it waves back</li>
+        <li><b>Pinch</b> in the air to grab one, drag with mouse or finger</li>
+        <li><b>Scroll</b> to resize, <b>double-tap</b> to make it spin</li>
+      </ul>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnStart" type="button">Start with camera</button>
+        <button class="btn btn-ghost" id="btnStartNoCam" type="button">Continue without camera</button>
+      </div>
+      <p class="fineprint">Video never leaves your device — it is only drawn on this page.</p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
