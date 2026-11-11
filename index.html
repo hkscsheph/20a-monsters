@@ -16,6 +16,11 @@
     <video id="cam" playsinline webkit-playsinline muted autoplay></video>
     <div class="glow"></div>
 
+    <!-- the people the camera found, drawn under the monsters -->
+    <svg id="poserig" class="rig poserig" aria-hidden="true">
+      <g id="posemarks" class="posemarks"></g>
+    </svg>
+
     <!-- puppets are injected here -->
     <div id="puppets" class="puppets"></div>
 
@@ -42,7 +47,7 @@
   </header>
 
   <p id="hint" class="hint">
-    <strong>Follow</strong> the camera &middot; tilt, lean, raise an arm &middot; <strong>F</strong> to take the strings yourself
+    <strong>Tilt</strong>, lean, raise an arm &middot; <strong>F</strong> puppet mode &middot; <strong>T</strong> black stage
   </p>
 
   <nav class="bar" aria-label="Controls">
@@ -54,6 +59,9 @@
     </button>
     <button class="btn" id="btnLight" type="button" aria-pressed="false" title="Shadow / spirit look (S)">
       <span class="dot"></span><span class="label" id="btnLightLabel">Shadow</span>
+    </button>
+    <button class="btn" id="btnBackdrop" type="button" aria-pressed="false" title="Camera image / black stage (T)">
+      <span class="dot"></span><span class="label" id="btnBackdropLabel">Camera</span>
     </button>
     <button class="btn" id="btnHands" type="button" aria-pressed="false" title="Hand tracking (H)">
       <span class="dot"></span><span class="label">Hands</span>
@@ -80,6 +88,7 @@
         <li><b>Follow mode</b> — up to four people, one monster each (one person gets all four)</li>
         <li><b>Puppet mode</b> — wave, pinch and drag to move them yourself</li>
         <li><b>Scroll</b> to resize, <b>double-tap</b> to make it spin</li>
+        <li><b>T</b> hides the camera for a plain black stage — the rigs stay lit</li>
       </ul>
       <div class="actions">
         <button class="btn btn-primary" id="btnStart" type="button">Start with camera</button>

@@ -32,6 +32,11 @@ Then open <http://localhost:8000>.
 Switch with the **Follow / Puppet** button or `F`. The camera (and body tracking) is
 turned on automatically the first time you press *Start with camera* in follow mode.
 
+Whoever the camera finds is drawn as a **stick figure under the monsters** (one colour
+per person, numbered from the left), so you can see who is driving which monster. `T`
+(or the **Camera / Black** button) hides the camera image and leaves a plain `#000`
+stage — the puppets, their strings and the detected rigs stay lit on top of it.
+
 ## What you can do
 
 | Gesture | Result |
@@ -45,9 +50,10 @@ turned on automatically the first time you press *Start with camera* in follow m
 | Scroll / trackpad | Resize the monster under the cursor |
 | Double-tap / double-click | Spin it on its strings |
 | Two hands near the stage | Everyone gets excited: faster tails, wider eyes, chattier jaws |
+| **Camera / Black** | Show the camera image, or drop to a plain black stage |
 | **Shadow / Spirit** | Switch between black silhouettes and the painted artwork |
 | **Reset** | Send every monster back to its mark |
-| Keys | `C` camera · `H` hands · `S` shadow/spirit · `M` sound · `R` reset · `Esc` dismiss intro |
+| Keys | `F` follow/puppet · `T` camera/black · `C` camera · `H` hands · `S` shadow/spirit · `M` sound · `R` reset · `Esc` dismiss intro |
 
 ## How the characters are rigged
 
@@ -95,6 +101,7 @@ js/rig.js         mesh + bone rig, skin weights, pose solve, WebGL renderer
 js/rigs.js        per-monster skeletons traced from the drawings
 js/rig-puppet.js  procedural performance: breathing, head tracking, waves, tail, blinks
 js/follow.js      follow mode: splits people across monsters, eases tilt / lean / arms onto them
+                  (the pose overlay is drawn in main.js from the landmarks camera.js keeps)
 js/camera.js      webcam + MediaPipe hands (pinch, wave) and pose (up to 4 people)
 js/audio.js       tiny synthesised grab / pluck / spin sounds
 assets/           the four drawings

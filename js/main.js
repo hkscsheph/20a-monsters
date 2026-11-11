@@ -22,10 +22,21 @@ const MONSTERS = [
   { id: 'grin',   name: 'Grin',   src: 'assets/monster4.png', rig: 'grin',   grip: 0.12, size: 0.9,  nx: 0.84, ny: 0.5 },
 ];
 
+// BlazePose connections, minus the face: the head is drawn as a circle
+const POSE_BONES = [
+  [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+  [11, 23], [12, 24], [23, 24],
+  [23, 25], [25, 27], [27, 29], [29, 31], [27, 31],
+  [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
+];
+const POSE_COLORS = ['#ffcf8b', '#9fe3c2', '#a9c4ff', '#ffa9b8'];
+
 const stage     = document.getElementById('stage');
 const layer     = document.getElementById('puppets');
 const video     = document.getElementById('cam');
 const stringsEl = document.getElementById('strings');
+const posesEl   = document.getElementById('posemarks');
 const handsEl   = document.getElementById('handmarks');
 const toastEl   = document.getElementById('toast');
 const hintEl    = document.getElementById('hint');
@@ -45,6 +56,7 @@ const state = {
   look: { x: 0, y: 0, at: 0 },   // last cursor position
   mode: 'spirit',                // shadow | spirit — follow mode starts lit
   playMode: 'follow',            // follow (camera drives) | puppet (you drive)
+  blackout: false,               // hide the camera image, keep the black stage
   rigged: false,
   started: false,
   lastT: 0,
@@ -335,6 +347,21 @@ function buildRig() {
     line.setAttribute('y2', 0);
     stringsEl.appendChild(line);
   }
+  // one skeleton per person on camera (drawn in updatePoseMarks)
+  for (let i = 0; i < 4; i += 1) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'posemark');
+    g.style.setProperty('--pc', POSE_COLORS[i]);
+    const bones = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bones.setAttribute('class', 'bones');
+    const head = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    head.setAttribute('class', 'head');
+    const tag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tag.setAttribute('class', 'tag');
+    g.append(bones, head, tag);
+    posesEl.appendChild(g);
+  }
+
   for (let i = 0; i < 2; i += 1) {
     const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     ring.setAttribute('r', 26);
@@ -347,6 +374,42 @@ function buildRig() {
     core.setAttribute('cy', -99);
     handsEl.append(ring, core);
   }
+}
+
+/** Stick figures over the video: who the camera found and where they are. */
+function updatePoseMarks() {
+  const groups = posesEl.children;
+  const people = camera.poseOn ? camera.persons.slice(0, 4) : [];
+  people.sort((a, b) => (a.id < b.id ? -1 : 1));
+
+  for (let i = 0; i < groups.length; i += 1) {
+    const g = groups[i];
+    const person = people[i];
+    if (!person || !person.pts) {
+      g.classList.remove('on');
+      continue;
+    }
+
+    const pts = person.pts;
+    let d = '';
+    for (let b = 0; b < POSE_BONES.length; b += 1) {
+      const [a, c] = POSE_BONES[b];
+      d += `M${pts[a * 2].toFixed(0)} ${pts[a * 2 + 1].toFixed(0)}L${pts[c * 2].toFixed(0)} ${pts[c * 2 + 1].toFixed(0)}`;
+    }
+    const bones = g.firstChild;
+    const head = g.children[1];
+    const tag = g.children[2];
+    bones.setAttribute('d', d);
+    head.setAttribute('cx', person.head.x.toFixed(0));
+    head.setAttribute('cy', person.head.y.toFixed(0));
+    head.setAttribute('r', person.head.r.toFixed(0));
+    tag.setAttribute('x', (person.head.x + person.head.r + 8).toFixed(0));
+    tag.setAttribute('y', person.head.y.toFixed(0));
+    tag.textContent = String(i + 1);
+    g.classList.add('on');
+  }
+
+  posesEl.classList.toggle('on', people.length > 0);
 }
 
 function updateRig() {
@@ -410,6 +473,7 @@ function frame(t) {
   const people = state.playMode === 'follow' && camera.poseOn ? camera.persons : [];
   follow.update(people, state.puppets, state.w, state.h, dt);
   if (camera.poseOn) updatePeopleStatus();
+  updatePoseMarks();
 
   syncHands(dt);
   updateGestures(dt);
@@ -428,6 +492,8 @@ function frame(t) {
 const btnCam = document.getElementById('btnCam');
 const btnMode = document.getElementById('btnMode');
 const btnModeLabel = document.getElementById('btnModeLabel');
+const btnBackdrop = document.getElementById('btnBackdrop');
+const btnBackdropLabel = document.getElementById('btnBackdropLabel');
 const btnLight = document.getElementById('btnLight');
 const btnLightLabel = document.getElementById('btnLightLabel');
 const btnHands = document.getElementById('btnHands');
@@ -466,8 +532,10 @@ function syncUI() {
   setPressed(btnHands, camera.handsOn);
   setPressed(btnSound, sfx.enabled);
   setPressed(btnMode, state.playMode === 'follow');
+  setPressed(btnBackdrop, state.blackout);
   btnLightLabel.textContent = state.mode === 'spirit' ? 'Spirit' : 'Shadow';
   btnModeLabel.textContent = state.playMode === 'follow' ? 'Follow' : 'Puppet';
+  btnBackdropLabel.textContent = state.blackout ? 'Black' : 'Camera';
   btnSoundLabel.textContent = sfx.enabled ? 'Sound on' : 'Sound off';
   statusCam.textContent = camera.on ? 'camera live' : 'camera off';
   statusCam.classList.toggle('on', camera.on);
@@ -585,6 +653,13 @@ function resetStage() {
   toast('Stage reset.');
 }
 
+function toggleBackdrop() {
+  state.blackout = !state.blackout;
+  stage.classList.toggle('blackout', state.blackout);
+  syncUI();
+  toast(state.blackout ? 'Camera image hidden — black stage.' : 'Camera image back on.');
+}
+
 function toggleSound() {
   sfx.toggle();
   syncUI();
@@ -609,6 +684,7 @@ function wire() {
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
 
   btnCam.addEventListener('click', () => (camera.on ? disableCamera() : enableCamera()));
+  btnBackdrop.addEventListener('click', toggleBackdrop);
   btnMode.addEventListener('click', () => setPlayMode(state.playMode === 'follow' ? 'puppet' : 'follow'));
   btnLight.addEventListener('click', toggleLight);
   btnHands.addEventListener('click', toggleHands);
@@ -641,6 +717,7 @@ function wire() {
     else if (k === 'h') toggleHands();
     else if (k === 's') toggleLight();
     else if (k === 'f') setPlayMode(state.playMode === 'follow' ? 'puppet' : 'follow');
+    else if (k === 't') toggleBackdrop();
     else if (k === 'm') toggleSound();
     else if (k === 'r') resetStage();
     else if (k === 'escape') hideIntro();

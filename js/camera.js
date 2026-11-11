@@ -266,6 +266,7 @@ export class Camera {
       const armR = clampf(((shR.y - wrR.y) / torso - 0.12) / 0.85, 0, 1);
       const presence = clampf(Math.min(vis(11), vis(12)) * 1.3, 0, 1);
 
+
       // stable id: the closest person from the previous frame (landmark order
       // shuffles as people move around)
       let id = null;
@@ -278,6 +279,24 @@ export class Camera {
       if (!id) id = `person-${this._nextPersonId++}`;
       claimed.add(id);
       seen.add(id);
+
+      // the whole skeleton in stage pixels, for drawing the rig over the video
+      const prevPts = this._personSmooth.get(`pts-${id}`) || null;
+      const pts = prevPts || new Float32Array(66);   // reused, no per-frame garbage
+      for (let k = 0; k < 33; k += 1) {
+        const q = at(k);
+        const lerpTo = prevPts ? prevPts[k * 2] + (q.x - prevPts[k * 2]) * 0.55 : q.x;
+        const lerpY = prevPts ? prevPts[k * 2 + 1] + (q.y - prevPts[k * 2 + 1]) * 0.55 : q.y;
+        pts[k * 2] = lerpTo;
+        pts[k * 2 + 1] = lerpY;
+      }
+      this._personSmooth.set(`pts-${id}`, pts);
+
+      // head circle: centred between the ears, or on the nose when they hide
+      const headR = Math.max(8, (headVis > 0.3 ? headWidth : shoulderWidth * 0.3) * 0.5);
+      const head = headVis > 0.3
+        ? { x: (earL.x + earR.x) / 2, y: (earL.y + earR.y) / 2 - headWidth * 0.12, r: headR }
+        : { x: nose.x, y: nose.y, r: headR };
 
       // smooth every channel, with small dead zones so tracking noise
       // doesn't shiver through the monsters
@@ -297,6 +316,8 @@ export class Camera {
             armR: ease(prevS.armR, armR, 0.03),
             presence: ease(prevS.presence, presence, 0.02),
             shoulderWidth,
+            pts,
+            head,
             energy: 0,
           }
         : {
@@ -310,6 +331,8 @@ export class Camera {
             armR,
             presence,
             shoulderWidth,
+            pts,
+            head,
             energy: 0,
           };
 
@@ -327,7 +350,7 @@ export class Camera {
     }
 
     for (const key of [...this._personSmooth.keys()]) {
-      if (!seen.has(key)) this._personSmooth.delete(key);
+      if (!seen.has(key) && !seen.has(String(key).replace(/^pts-/, ''))) this._personSmooth.delete(key);
     }
 
     out.sort((a, b) => (a.id < b.id ? -1 : 1));
