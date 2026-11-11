@@ -71,6 +71,11 @@ body {
 }
 .stage.no-cam #cam { opacity: 0; }
 
+/* black stage: the camera image and the lit wall are hidden, everything else stays */
+.stage.blackout { background: #000; }
+.stage.blackout #cam,
+.stage.blackout .wall { opacity: 0; }
+
 /* warm lamp bloom, screen-blended over the camera feed */
 .glow {
   position: absolute;
@@ -196,6 +201,42 @@ body {
   height: 100%;
   pointer-events: none;
   overflow: visible;
+}
+
+/* detected people: a stick figure per person on camera.
+   It sits before #puppets in the DOM, so the monsters are drawn on top. */
+.posemarks {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.posemarks.on { opacity: 1; }
+.posemark {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.posemark.on { opacity: 1; }
+.posemark .bones {
+  fill: none;
+  stroke: var(--pc, #ffcf8b);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.5;
+}
+.posemark .head {
+  fill: none;
+  stroke: var(--pc, #ffcf8b);
+  stroke-width: 1.4;
+  opacity: 0.62;
+}
+.posemark .tag {
+  fill: var(--pc, #ffcf8b);
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  dominant-baseline: middle;
+  opacity: 0.75;
 }
 
 .strings line {
