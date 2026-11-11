@@ -1,17 +1,22 @@
 /* ============================================================
-   Puppet — a springy paper creature on two strings.
-   The grip point (x, y) is where you hold it; the body lags
-   behind and swings, which is what makes it read as a puppet.
+   Puppet — the physics body every monster hangs from.
+   The grip point (x, y) is where you hold it; the body lags behind
+   and swings, which is what makes it read as a puppet. Rendering
+   lives in buildVisual()/render(), so a rigged monster and a plain
+   picture share the same feel.
    ============================================================ */
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
 
 export class Puppet {
-  constructor({ id, name, src, aspect, height, grip = 0.12, nx = 0.5, ny = 0.5 }) {
+  constructor(opts) {
+    const { id, name, src, image, aspect, height, grip = 0.12, nx = 0.5, ny = 0.5 } = opts;
+    this.rig = opts.rig || null;
     this.id = id;
     this.name = name;
     this.src = src;
+    this.image = image || null;
     this.aspect = aspect;      // art width / height
     this.baseH = height;       // desired on-screen height, px
     this.grip = grip;          // grip point, fraction of height from the top
@@ -52,11 +57,18 @@ export class Puppet {
     root.dataset.name = name;
     root.style.opacity = '0';
     root.style.transition = 'opacity .6s ease';
+    this.el = root;
 
+    this.buildVisual();
+    this.buildMask();
+  }
+
+  /* ---- what hangs in the air ---- */
+  buildVisual() {
     const layer = (cls) => {
       const img = document.createElement('img');
       img.className = cls;
-      img.src = src;
+      img.src = this.src;
       img.alt = '';
       img.draggable = false;
       img.decoding = 'async';
@@ -65,25 +77,22 @@ export class Puppet {
     this.haloEl = layer('l-halo');
     this.shadowEl = layer('l-shadow');
     this.colorEl = layer('l-color');
-    root.append(this.haloEl, this.shadowEl, this.colorEl);
-    this.shadowEl.addEventListener('load', () => { root.style.opacity = '1'; }, { once: true });
-
-    this.el = root;
-    this.buildMask();
+    this.el.append(this.haloEl, this.shadowEl, this.colorEl);
+    this.shadowEl.addEventListener('load', () => { this.el.style.opacity = '1'; }, { once: true });
   }
 
   /* ---- alpha mask, so you can only grab the monster itself ---- */
   buildMask() {
-    const img = document.createElement('img');
-    img.onload = () => {
+    const img = this.image || document.createElement('img');
+    const draw = () => {
       const H = 200;
       const W = Math.max(1, Math.round((H * img.naturalWidth) / img.naturalHeight));
       const canvas = document.createElement('canvas');
       canvas.width = W;
       canvas.height = H;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, W, H);
       try {
+        ctx.drawImage(img, 0, 0, W, H);
         this.mask = ctx.getImageData(0, 0, W, H).data;
         this.maskW = W;
         this.maskH = H;
@@ -91,7 +100,9 @@ export class Puppet {
         this.mask = null; // tainted canvas — fall back to bounding box
       }
     };
-    img.src = this.src;
+    if (this.image && this.image.naturalWidth) draw();
+    else img.addEventListener('load', draw, { once: true });
+    if (!this.image) img.src = this.src;
   }
 
   /* ---- sizing / home position ---- */
@@ -108,7 +119,11 @@ export class Puppet {
     this.ly = this.y;
     this.lvx = 0;
     this.lvy = 0;
+    this.onLayout();
   }
+
+  /* hook for subclasses (canvas sizing) */
+  onLayout() {}
 
   /** Rough centre of the creature's body — nicer target for hand grabs than the grip. */
   get bodyX() { return this.lx; }
@@ -218,20 +233,20 @@ export class Puppet {
   }
 
   /* ---- drawing ---- */
-  render(time) {
+  applyTransform(px, py, deg) {
     const w = this.w;
-    const h = this.h;
-    const gy = h * this.grip;
-    const calm = this.grabbed ? 0 : 1;
-    const bobX = Math.sin(time * 0.00085 + this.phase) * 5 * calm;
-    const bobY = Math.cos(time * 0.00125 + this.phase * 1.7) * 7 * calm;
-    const px = this.lx + bobX;
-    const py = this.ly + bobY;
-    const deg = this.rot + (this.spinAngle * 180) / Math.PI;
-
+    const gy = this.h * this.grip;
     this.el.style.transform =
       `translate3d(${(px - w / 2).toFixed(2)}px, ${(py - gy).toFixed(2)}px, 0)` +
       ` rotate(${deg.toFixed(2)}deg) scale(${this.scale.toFixed(3)})`;
+  }
+
+  render(time) {
+    const calm = this.grabbed ? 0 : 1;
+    const bobX = Math.sin(time * 0.00085 + this.phase) * 5 * calm;
+    const bobY = Math.cos(time * 0.00125 + this.phase * 1.7) * 7 * calm;
+    const deg = this.rot + (this.spinAngle * 180) / Math.PI;
+    this.applyTransform(this.lx + bobX, this.ly + bobY, deg);
   }
 
   /* ---- hit test in real pixels, ignoring transparent areas ---- */

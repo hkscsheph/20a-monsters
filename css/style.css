@@ -161,6 +161,18 @@ body {
   filter: drop-shadow(0 0 18px rgba(255, 210, 150, 0.28)) saturate(1.15);
 }
 
+/* rigged monsters draw into a WebGL canvas instead of stacked images */
+.puppet canvas.rig-canvas {
+  display: block;
+  pointer-events: none;
+}
+.stage:not(.spirit) .puppet canvas.rig-canvas {
+  filter: blur(1.5px) drop-shadow(0 0 16px rgba(0, 0, 0, 0.45));
+}
+.stage.spirit .puppet canvas.rig-canvas {
+  filter: drop-shadow(0 0 20px rgba(255, 208, 150, 0.28)) saturate(1.08);
+}
+
 /* spirit mode: the painted creatures glow through */
 .stage.spirit .puppet .l-halo,
 .stage.spirit .puppet .l-shadow { opacity: 0; }

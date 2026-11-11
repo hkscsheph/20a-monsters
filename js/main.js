@@ -1,26 +1,29 @@
 /* ============================================================
    Monster Shadow Theatre
-   Four drawn monsters that behave like shadow puppets on strings,
-   hanging in front of your webcam image.
+   Four hand-drawn monsters, rigged with bones and skinned meshes,
+   living on top of your webcam image. Gestures from the camera
+   decide where they look, what they reach for, and when they wave.
    ============================================================ */
 
 import { Puppet } from './puppet.js';
+import { RigPuppet } from './rig-puppet.js';
 import { Camera } from './camera.js';
 import { Sfx } from './audio.js';
+import { webglSupported } from './rig.js';
+import skeleton from './rigs.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const MONSTERS = [
-  { id: 'grasp',  name: 'Grasp',  src: 'assets/monster1.png', grip: 0.11, size: 1.04, nx: 0.17, ny: 0.47 },
-  { id: 'grin',   name: 'Grin',   src: 'assets/monster2.png', grip: 0.10, size: 1.0,  nx: 0.39, ny: 0.43 },
-  { id: 'waver',  name: 'Waver',  src: 'assets/monster3.png', grip: 0.13, size: 0.94, nx: 0.62, ny: 0.46 },
-  { id: 'drowse', name: 'Drowse', src: 'assets/monster4.png', grip: 0.16, size: 0.9,  nx: 0.84, ny: 0.50 },
+  { id: 'grasp',  name: 'Grasp',  src: 'assets/monster1.png', rig: 'grasp',  grip: 0.12, size: 1.04, nx: 0.17, ny: 0.47 },
+  { id: 'drowse', name: 'Drowse', src: 'assets/monster2.png', rig: 'drowse', grip: 0.12, size: 1.0,  nx: 0.39, ny: 0.43 },
+  { id: 'waver',  name: 'Waver',  src: 'assets/monster3.png', rig: 'waver',  grip: 0.13, size: 0.94, nx: 0.62, ny: 0.46 },
+  { id: 'grin',   name: 'Grin',   src: 'assets/monster4.png', rig: 'grin',   grip: 0.12, size: 0.9,  nx: 0.84, ny: 0.5 },
 ];
 
 const stage     = document.getElementById('stage');
 const layer     = document.getElementById('puppets');
 const video     = document.getElementById('cam');
-const rig       = document.getElementById('rig');
 const stringsEl = document.getElementById('strings');
 const handsEl   = document.getElementById('handmarks');
 const toastEl   = document.getElementById('toast');
@@ -34,10 +37,12 @@ const state = {
   w: window.innerWidth,
   h: window.innerHeight,
   puppets: [],
-  pointer: null,                 // { id, puppet, lastX, lastY, moved }
+  pointer: null,                 // { id, puppet }
   handGrabs: new Map(),          // hand id → puppet
   active: null,                  // puppet with visible strings
+  look: { x: 0, y: 0, at: 0 },   // last cursor position
   mode: 'shadow',
+  rigged: false,
   started: false,
   lastT: 0,
 };
@@ -71,23 +76,39 @@ function baseHeight() {
 async function buildPuppets() {
   const metas = await Promise.all(
     MONSTERS.map(async (m) => {
-      const img = await loadImage(m.src);
-      return { ...m, aspect: img.naturalWidth / img.naturalHeight };
+      const image = await loadImage(m.src);
+      return { ...m, image, aspect: image.naturalWidth / image.naturalHeight };
     }),
   );
 
+  state.rigged = webglSupported();
+
   state.puppets = metas.map((m) => {
-    const p = new Puppet({
+    const opts = {
       id: m.id,
       name: m.name,
       src: m.src,
+      image: m.image,
       aspect: m.aspect,
       height: baseHeight() * m.size,
       grip: m.grip,
       nx: m.nx,
       ny: m.ny,
-    });
+    };
+
+    let p = null;
+    if (state.rigged && skeleton[m.rig]) {
+      const rigged = new RigPuppet({ ...opts, rigConfig: skeleton[m.rig] });
+      if (rigged.ok) p = rigged;
+      else rigged.el.remove();
+    }
+    if (!p) {
+      state.rigged = false;
+      p = new Puppet(opts);
+    }
+
     p.size = m.size;
+    if (p.setMode) p.setMode(state.mode);
     layer.appendChild(p.el);
     return p;
   });
@@ -154,6 +175,10 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!state.started) return;
 
+  state.look.x = e.clientX;
+  state.look.y = e.clientY;
+  state.look.at = performance.now();
+
   if (state.pointer && state.pointer.id === e.pointerId) {
     state.pointer.puppet.moveTo(e.clientX, e.clientY);
     return;
@@ -212,7 +237,7 @@ function syncHands(dt) {
         grabbed.moveTo(hand.x, hand.y);
       } else if (!state.pointer) {
         let best = null;
-        let bestDist = 190;
+        let bestDist = 200;
         for (const p of state.puppets) {
           const d = Math.hypot(p.bodyX - hand.x, p.bodyY - hand.y);
           if (d < bestDist) { bestDist = d; best = p; }
@@ -238,6 +263,49 @@ function syncHands(dt) {
       state.handGrabs.delete(id);
       if (state.active === p) state.active = null;
     }
+  }
+}
+
+/* ------------------------------------------------------------ gestures */
+
+function updateGestures(dt) {
+  const hands = camera.handsOn ? camera.hands : [];
+  const now = performance.now();
+  const cursorFresh = now - state.look.at < 2600 && !state.look.pointerNone;
+  const grabbing = hands.filter((h) => h.pinch).length;
+
+  for (const p of state.puppets) {
+    if (!p.setContext) continue;
+
+    // which hand is this monster paying attention to?
+    let best = null;
+    let bestD = 620;
+    for (const h of hands) {
+      const d = Math.hypot(h.x - p.bodyX, h.y - p.bodyY);
+      if (d < bestD) { bestD = d; best = h; }
+    }
+
+    let focus = null;
+    let wave = 0;
+    let excite = 0;
+    let pet = 0;
+
+    if (best) {
+      focus = { x: best.x, y: best.y };
+      wave = best.open ? best.wave : best.wave * 0.25;
+      if (bestD < 340) excite += 0.25;
+      if (best.pinch) excite += 0.45;
+      if (best.open && !best.pinch && bestD < 300) pet = Math.min(1, (300 - bestD) / 170);
+      if (hands.length > 1) excite += 0.2;
+      if (grabbing > 1) excite += 0.2;
+    } else if (cursorFresh) {
+      focus = { x: state.look.x, y: state.look.y };
+    }
+
+    if (p.grabbed) excite += 0.55;
+    if (state.active === p) excite += 0.1;
+
+    p.setContext({ focus, wave, excite: Math.min(1, excite), pet, dt });
   }
 }
 
@@ -299,7 +367,7 @@ function updateRig() {
     if (hand) {
       ring.setAttribute('cx', hand.x.toFixed(1));
       ring.setAttribute('cy', hand.y.toFixed(1));
-      ring.setAttribute('r', hand.pinch ? 18 : 28);
+      ring.setAttribute('r', hand.pinch ? 16 : 28);
       ring.classList.add('on');
       core.setAttribute('cx', hand.x.toFixed(1));
       core.setAttribute('cy', hand.y.toFixed(1));
@@ -320,6 +388,7 @@ function frame(t) {
 
   if (camera.handsOn) camera.update(t, state.w, state.h);
   syncHands(dt);
+  updateGestures(dt);
 
   for (const p of state.puppets) {
     p.update(dt, t, state.w, state.h);
@@ -368,7 +437,7 @@ async function enableCamera() {
   try {
     await camera.start();
     stage.classList.remove('no-cam');
-  } catch ( err ) {
+  } catch (err) {
     stage.classList.add('no-cam');
     toast(
       err && err.code === 'unsupported'
@@ -403,7 +472,7 @@ async function toggleHands() {
   syncUI();
   try {
     await camera.enableHands();
-    toast('Hold a hand up and pinch to grab a monster.', 4500);
+    toast('Pinch to grab a monster. Wave at one and it waves back.', 5000);
   } catch (err) {
     camera.disableHands();
     toast('Hand tracking needs an internet connection the first time. Dragging still works.', 5200);
@@ -416,6 +485,7 @@ async function toggleHands() {
 function toggleLight() {
   state.mode = state.mode === 'shadow' ? 'spirit' : 'shadow';
   stage.classList.toggle('spirit', state.mode === 'spirit');
+  for (const p of state.puppets) if (p.setMode) p.setMode(state.mode);
   syncUI();
 }
 
@@ -445,7 +515,11 @@ function wire() {
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerUp);
-  stage.addEventListener('pointerleave', onPointerLeave);
+  stage.addEventListener('pointerleave', () => {
+    state.look.pointerNone = true;
+    onPointerLeave();
+  });
+  stage.addEventListener('pointerenter', () => { state.look.pointerNone = false; });
   stage.addEventListener('wheel', onWheel, { passive: false });
   stage.addEventListener('dblclick', onDoubleClick);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -460,12 +534,12 @@ function wire() {
     e.currentTarget.blur();
     hideIntro();
     await enableCamera();
-    if (camera.on) toast('Camera live. Grab a monster.', 3000);
+    if (camera.on) toast('Camera live. Raise a hand and wave.', 3200);
   });
   document.getElementById('btnStartNoCam').addEventListener('click', (e) => {
     e.currentTarget.blur();
     hideIntro();
-    toast('No camera — the monsters are all yours.', 3000);
+    toast('No camera — move the cursor and the monsters will watch it.', 3600);
   });
 
   window.addEventListener('keydown', (e) => {

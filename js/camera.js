@@ -28,6 +28,8 @@ export class Camera {
     this.video = video;
     this.stream = null;
     this.on = false;
+    this._hist = new Map();     // hand id → recent x positions (wave detection)
+    this._pinch = new Map();    // hand id → pinch hysteresis state
 
     this.landmarker = null;
     this.handsOn = false;
@@ -155,10 +157,23 @@ export class Camera {
       const palm = lm[9];
       const p = this.toStage(palm.x, palm.y, stageW, stageH);
 
-      // scale-invariant pinch: thumb tip (4) to index tip (8), normalised by palm size
       const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
       const palmSize = Math.max(0.001, dist(lm[0], lm[9]));
+
+      // scale-invariant pinch: thumb tip (4) to index tip (8)
       const pinchRatio = dist(lm[4], lm[8]) / palmSize;
+      const wasPinching = this._pinch.get(id) || false;
+      const pinching = wasPinching ? pinchRatio < 0.62 : pinchRatio < 0.5;
+      this._pinch.set(id, pinching);
+
+      // how many fingers point away from the wrist?
+      let extended = 0;
+      const tips = [8, 12, 16, 20];
+      const mids = [6, 10, 14, 18];
+      for (let f = 0; f < 4; f += 1) {
+        if (dist(lm[tips[f]], lm[0]) > dist(lm[mids[f]], lm[0]) * 1.06) extended += 1;
+      }
+      const open = extended >= 3;
 
       const prev = this._smooth.get(id);
       const k = 0.55;
@@ -168,20 +183,39 @@ export class Camera {
       const vy = prev ? (y - prev.y) * 60 : 0;
       this._smooth.set(id, { x, y });
 
+      // waving: count sideways reversals over the last second
+      const hist = this._hist.get(id) || [];
+      hist.push({ t: stamp, x });
+      while (hist.length > 2 && stamp - hist[0].t > 900) hist.shift();
+      this._hist.set(id, hist);
+      let reversals = 0;
+      let dir = 0;
+      for (let h = 1; h < hist.length; h += 1) {
+        const dx = hist[h].x - hist[h - 1].x;
+        if (Math.abs(dx) < 1.2) continue;
+        const d = dx > 0 ? 1 : -1;
+        if (dir !== 0 && d !== dir) reversals += 1;
+        dir = d;
+      }
+      const wave = Math.min(1, Math.max(0, (reversals - 1) / 3));
+
       out.push({
         id,
         x,
         y,
         vx,
         vy,
-        pinch: pinchRatio < 0.55,
+        pinch: pinching,
         pinchRatio,
+        open,
+        extended,
+        wave,
         label,
       });
     }
 
     for (const key of [...this._smooth.keys()]) {
-      if (!seen.has(key)) this._smooth.delete(key);
+      if (!seen.has(key)) { this._smooth.delete(key); this._hist.delete(key); this._pinch.delete(key); }
     }
 
     this.hands = out;
