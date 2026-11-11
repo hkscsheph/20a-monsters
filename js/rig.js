@@ -339,17 +339,14 @@ void main() {
 const FS = `
 precision mediump float;
 uniform sampler2D uTex;
-uniform float uMode;
+uniform float uMix;    // 0 = silhouette, 1 = artwork; eased so toggling doesn't pop
 uniform vec3 uColor;
 varying vec2 vUV;
 void main() {
   vec4 t = texture2D(uTex, vUV);
   if (t.a < 0.004) discard;
-  if (uMode > 0.5) {
-    gl_FragColor = t;
-  } else {
-    gl_FragColor = vec4(uColor * t.a, t.a);
-  }
+  vec4 shadow = vec4(uColor * t.a, t.a);
+  gl_FragColor = mix(shadow, t, uMix);
 }`;
 
 function compile(gl, type, src) {
@@ -370,6 +367,7 @@ export class MeshRenderer {
     this.rig = rig;
     this.ok = false;
     this.mode = 0;
+    this.mix = 0;
     this.map = new Float32Array([0, 0, 0, 0]);
 
     const attrs = {
@@ -400,7 +398,7 @@ export class MeshRenderer {
     this.aPos = gl.getAttribLocation(prog, 'aPos');
     this.aUV = gl.getAttribLocation(prog, 'aUV');
     this.uMap = gl.getUniformLocation(prog, 'uMap');
-    this.uMode = gl.getUniformLocation(prog, 'uMode');
+    this.uMix = gl.getUniformLocation(prog, 'uMix');
     this.uColor = gl.getUniformLocation(prog, 'uColor');
     this.uTex = gl.getUniformLocation(prog, 'uTex');
 
@@ -471,6 +469,9 @@ export class MeshRenderer {
 
   draw() {
     if (!this.ok) return;
+    // ease the silhouette/artwork blend toward the requested mode
+    this.mix += (this.mode - this.mix) * 0.14;
+    if (Math.abs(this.mode - this.mix) < 0.004) this.mix = this.mode;
     try {
       this.drawNow();
     } catch (err) {
@@ -496,7 +497,7 @@ export class MeshRenderer {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform4fv(this.uMap, this.map);
-    gl.uniform1f(this.uMode, this.mode);
+    gl.uniform1f(this.uMix, this.mix);
     gl.drawElements(gl.TRIANGLES, this.idxCount, gl.UNSIGNED_SHORT, 0);
   }
 

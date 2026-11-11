@@ -148,6 +148,13 @@ body {
   transition: opacity 0.45s ease;
 }
 
+.puppet img,
+.puppet .l-halo,
+.puppet .l-shadow,
+.puppet .l-color {
+  /* cross-fade the shadow ↔ spirit layers instead of flipping them */
+  transition: opacity 0.4s ease;
+}
 .puppet .l-halo {
   filter: brightness(0) blur(18px);
   opacity: 0.42;
@@ -165,12 +172,14 @@ body {
 .puppet canvas.rig-canvas {
   display: block;
   pointer-events: none;
+  /* keep both looks using the same filter functions so they can cross-fade */
+  transition: filter 0.45s ease;
 }
 .stage:not(.spirit) .puppet canvas.rig-canvas {
-  filter: blur(1.5px) drop-shadow(0 0 16px rgba(0, 0, 0, 0.45));
+  filter: blur(1.5px) saturate(1) drop-shadow(0 0 16px rgba(0, 0, 0, 0.45));
 }
 .stage.spirit .puppet canvas.rig-canvas {
-  filter: drop-shadow(0 0 20px rgba(255, 208, 150, 0.28)) saturate(1.08);
+  filter: blur(0px) saturate(1.08) drop-shadow(0 0 20px rgba(255, 208, 150, 0.28));
 }
 
 /* spirit mode: the painted creatures glow through */
@@ -203,7 +212,7 @@ body {
   stroke: rgba(255, 207, 139, 0.55);
   stroke-width: 1.5;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, r 0.18s ease;
 }
 .handmarks circle.on { opacity: 1; }
 .handmarks circle.core {

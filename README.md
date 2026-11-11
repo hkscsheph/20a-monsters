@@ -64,6 +64,14 @@ anything.
 Grabbing uses per-pixel alpha testing (an offscreen mask per image), so you only pick a
 monster up when you actually touch the drawing, not its transparent bounding box.
 
+Nothing on the stage is allowed to jump. Resets glide home instead of teleporting, the
+scroll wheel sets a size *target* that the drawn scale chases, a window resize eases the
+whole troupe to its new marks, the opening drop-in happens during a fade so you never see
+the hop, the head turns at a limited angular rate (it can't flick between a hand and the
+cursor), hand tracking has a dead zone so sensor noise doesn't shiver through a held
+monster, and shadow ↔ spirit cross-fades in the shader and in the CSS filter. The
+springs themselves are unchanged — it still swings, overshoots and settles.
+
 ## Files
 
 ```

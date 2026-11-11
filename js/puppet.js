@@ -38,7 +38,12 @@ export class Puppet {
     this.spinAngle = 0;    // extra rotation from a fling / double tap
     this.spinVel = 0;
 
-    this.scale = 1;
+    this.scale = 1;         // drawn scale (eased toward scaleTarget)
+    this.scaleTarget = 1;
+    this.calm = 1;          // 1 when idling, 0 while held — fades the idle bob
+    this.glide = null;      // eased move toward a target point
+    this.placed = false;    // has the puppet been positioned once?
+    this.revealAt = 0;      // timestamp for the fade-in after a jump
     this.phase = Math.random() * TAU;
     this.grabbed = false;
     this.gx = 0;           // grab offset, px
@@ -106,20 +111,44 @@ export class Puppet {
   }
 
   /* ---- sizing / home position ---- */
-  layout(stageW, stageH, baseH) {
+  layout(stageW, stageH, baseH, snap = false) {
     this.h = Math.max(60, baseH);
     this.w = this.h * this.aspect;
     this.el.style.width = `${this.w}px`;
     this.el.style.height = `${this.h}px`;
     this.el.style.transformOrigin = `${this.w / 2}px ${this.h * this.grip}px`;
 
-    this.x = this.nx * stageW;
-    this.y = this.ny * stageH;
-    this.lx = this.x;
-    this.ly = this.y;
-    this.lvx = 0;
-    this.lvy = 0;
+    const tx = this.nx * stageW;
+    const ty = this.ny * stageH;
+
+    if (snap || !this.placed) {
+      this.placed = true;
+      this.glide = null;
+      this.x = tx;
+      this.y = ty;
+      this.lx = tx;
+      this.ly = ty;
+      this.lvx = 0;
+      this.lvy = 0;
+    } else {
+      // a resize (or a phone's address bar sliding away) shouldn't teleport
+      this.glideTo(tx, ty, 320);
+      this.lvx *= 0.4;
+      this.lvy *= 0.4;
+    }
     this.onLayout();
+  }
+
+  /** Ease the grip toward a point instead of snapping to it. */
+  glideTo(x, y, ms = 420) {
+    this.glide = { fx: this.x, fy: this.y, tx: x, ty: y, t: 0, dur: Math.max(0.05, ms / 1000) };
+  }
+
+  /** Fade in over the next frame — used after a teleport nobody should see. */
+  reveal(ms = 520) {
+    this.el.style.opacity = '0';
+    this.revealAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 60;
+    this.revealMs = ms;
   }
 
   /* hook for subclasses (canvas sizing) */
@@ -140,6 +169,7 @@ export class Puppet {
   /* ---- interaction ---- */
   grab(px, py) {
     this.grabbed = true;
+    this.glide = null;
     this.gx = this.x - px;
     this.gy = this.y - py;
     this.pvx = 0;
@@ -158,13 +188,17 @@ export class Puppet {
     this.ny = clamp(ny / window.innerHeight, -0.1, 1.1);
   }
 
-  release() {
+  release(vx = 0, vy = 0) {
     if (!this.grabbed) return;
     this.grabbed = false;
     this.el.classList.remove('held');
-    // throw the lag point, so the body swings after the hand stops
-    this.lvx += clamp(this.pvx * 6, -1800, 1800);
-    this.lvy += clamp(this.pvy * 6, -1800, 1800);
+    // throw the lag point, so the body swings after the hand stops — gently,
+    // because a hard velocity kick reads as a teleport. The total is capped so
+    // a violent flick can never whip the body further than it can follow.
+    const kickX = clamp(this.pvx * 1.8, -520, 520) + clamp(vx * 0.25, -260, 260);
+    const kickY = clamp(this.pvy * 1.8, -520, 520) + clamp(vy * 0.25, -260, 260);
+    this.lvx = clamp(this.lvx * 0.6 + kickX, -1000, 1000);
+    this.lvy = clamp(this.lvy * 0.6 + kickY, -1000, 1000);
     this.pvx = 0;
     this.pvy = 0;
   }
@@ -175,10 +209,13 @@ export class Puppet {
 
   /** Drop in from above the stage and swing on the strings. */
   dropIn() {
+    this.glide = null;
+    this.reveal(560);
     this.lx = this.x;
     this.ly = this.y - Math.min(560, window.innerHeight * 0.8);
     this.lvx = 0;
     this.lvy = 0;
+    this.calm = 1;
     this.rot = -8 + Math.random() * 16;
     this.spinAngle = 0;
     this.spinVel = 0;
@@ -187,17 +224,32 @@ export class Puppet {
   goHome() {
     this.nx = this.homeNx;
     this.ny = this.homeNy;
-    this.x = this.homeX;
-    this.y = this.homeY;
-    this.scale = 1;
-    this.spinAngle = 0;
-    this.spinVel = 0;
+    this.scaleTarget = 1;
+    this.spinVel = 0;          // keep the angle: the settle eases it upright
     this.lvx *= 0.3;
     this.lvy *= 0.3;
+    this.glideTo(this.homeX, this.homeY, 520);
   }
 
   /* ---- physics ---- */
   update(dt, time, stageW, stageH) {
+    // eased moves (reset, resize, re-layout)
+    if (this.glide) {
+      const g = this.glide;
+      g.t += dt;
+      const u = Math.min(1, g.t / g.dur);
+      const e = 1 - Math.pow(1 - u, 2.2);
+      this.x = g.fx + (g.tx - g.fx) * e;
+      this.y = g.fy + (g.ty - g.fy) * e;
+      this.nx = clamp(this.x / window.innerWidth, -0.1, 1.1);
+      this.ny = clamp(this.y / window.innerHeight, -0.1, 1.1);
+      if (u >= 1) this.glide = null;
+    }
+
+    // the idle bob fades out when you grab, instead of snapping off
+    this.calm += ((this.grabbed ? 0 : 1) - this.calm) * Math.min(1, dt * 5);
+    this.scale += (this.scaleTarget - this.scale) * Math.min(1, dt * 11);
+
     // critically-ish damped spring: body chases the grip, overshoots a touch
     const k = 165;
     const damp = 14;
@@ -233,6 +285,14 @@ export class Puppet {
   }
 
   /* ---- drawing ---- */
+  applyReveal(time) {
+    if (this.revealAt && time >= this.revealAt) {
+      this.revealAt = 0;
+      this.el.style.transition = `opacity ${(this.revealMs || 520)}ms ease`;
+      this.el.style.opacity = '1';
+    }
+  }
+
   applyTransform(px, py, deg) {
     const w = this.w;
     const gy = this.h * this.grip;
@@ -242,7 +302,8 @@ export class Puppet {
   }
 
   render(time) {
-    const calm = this.grabbed ? 0 : 1;
+    this.applyReveal(time);
+    const calm = this.calm;
     const bobX = Math.sin(time * 0.00085 + this.phase) * 5 * calm;
     const bobY = Math.cos(time * 0.00125 + this.phase * 1.7) * 7 * calm;
     const deg = this.rot + (this.spinAngle * 180) / Math.PI;
