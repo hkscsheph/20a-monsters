@@ -316,6 +316,9 @@ body {
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 20px);
   gap: 6px;
   padding: 7px;
   border-radius: 18px;

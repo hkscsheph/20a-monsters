@@ -143,6 +143,12 @@ export class RigPuppet extends Puppet {
     const lean = clamp(this.lvx * 0.00026, -0.24, 0.24);
     const sink = clamp(this.lvy * 0.00012, -0.08, 0.12);
     const excited = clamp(this.excite + this.wave * 0.6, 0, 1);
+    // follow mode: the person on camera tilts the head, leans the body and
+    // raises the arms. Channels are already eased by the choreographer.
+    const dr = this.drive && this.drive.active ? this.drive : null;
+    const dTilt = dr ? dr.tilt : 0;
+    const dYaw = dr ? dr.yaw : 0;
+    const dLean = dr ? dr.lean : 0;
     // grabbing used to snap every held-driven bone at once; ease it instead
     this.holdW += ((this.grabbed ? 1 : 0) - this.holdW) * Math.min(1, dtp * 7);
     const held = this.holdW;
@@ -192,16 +198,16 @@ export class RigPuppet extends Puppet {
     const breath = Math.sin(t * 1.7 + ph) * 0.014 * idle;
     const bob = Math.sin(t * 1.31 + ph) * 2.4 * u * idle;
     const attend = yaw * 0.025 + this.pet * yaw * 0.02;
-    rig.set('root', lean * 0.45 - sink * 0.3 + attend * 0.5, 1 - breath * 0.5, 1 + breath, 0, bob);
-    rig.set('spine', lean * 0.55 + attend + Math.sin(t * 1.05 + ph) * 0.012 * idle, 1, 1 + breath * 0.6, 0, bob * 0.4);
-    rig.set('chest', lean * 0.45 + attend * 0.8 - held * 0.03, 1, 1 + breath * 0.5, 0, 0);
+    rig.set('root', lean * 0.45 - sink * 0.3 + attend * 0.5 + dLean * 0.5, 1 - breath * 0.5, 1 + breath, 0, bob);
+    rig.set('spine', lean * 0.55 + attend + Math.sin(t * 1.05 + ph) * 0.012 * idle + dLean * 0.7, 1, 1 + breath * 0.6, 0, bob * 0.4);
+    rig.set('chest', lean * 0.45 + attend * 0.8 - held * 0.03 + dLean * 0.45, 1, 1 + breath * 0.5, 0, 0);
 
     // --- head: track the focus, counter the lean --------------------
-    const headYaw = yaw * (c.yaw ?? 0.3);
+    const headYaw = yaw * (c.yaw ?? 0.3) + dYaw * 0.18;
     const headPitch = pitch * 0.16;
-    rig.set('neck', headYaw * 0.15, 1, 1, 0, 0);
+    rig.set('neck', headYaw * 0.15 + dTilt * 0.3, 1, 1, 0, 0);
     rig.set('head',
-      headYaw - lean * 0.85 - headPitch * 0.4 + Math.sin(t * 0.9 + ph) * 0.015 * idle,
+      headYaw - lean * 0.85 - headPitch * 0.4 + dTilt * 0.95 + Math.sin(t * 0.9 + ph) * 0.015 * idle,
       1 + Math.abs(headYaw) * 0.02,
       1 - Math.abs(headYaw) * 0.015,
       headYaw * 22 * u,
@@ -249,6 +255,11 @@ export class RigPuppet extends Puppet {
       }
       if (excited > 0.05 && waveAmt < 0.02) {
         rot += lift * 0.25 * excited;
+      }
+      if (dr) {
+        // armL/armR: 0 = hanging, 1 = overhead
+        rot += lift * 1.15 * (side === 'L' ? dr.armL : dr.armR);
+        rot += Math.sin(t * 2.1 + ph + (side === 'L' ? 0 : 1.7)) * 0.04 * dr.energy;
       }
 
       rig.set(arm, rot);

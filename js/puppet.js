@@ -42,6 +42,7 @@ export class Puppet {
     this.scaleTarget = 1;
     this.calm = 1;          // 1 when idling, 0 while held — fades the idle bob
     this.glide = null;      // eased move toward a target point
+    this.drive = null;      // follow-mode direction from a person on camera
     this.placed = false;    // has the puppet been positioned once?
     this.revealAt = 0;      // timestamp for the fade-in after a jump
     this.phase = Math.random() * TAU;
@@ -137,6 +138,11 @@ export class Puppet {
       this.lvy *= 0.4;
     }
     this.onLayout();
+  }
+
+  /** Direction from the follow-mode choreographer (see follow.js). */
+  setDrive(drive) {
+    this.drive = drive;
   }
 
   /** Ease the grip toward a point instead of snapping to it. */
@@ -246,6 +252,16 @@ export class Puppet {
       if (u >= 1) this.glide = null;
     }
 
+    // follow mode: drift toward the person's position. A monster you are
+    // holding (or one that is gliding home) ignores the direction.
+    if (this.drive && this.drive.active && !this.grabbed && !this.glide) {
+      const kf = Math.min(1, dt * 9);
+      this.x += (this.drive.tx - this.x) * kf;
+      this.y += (this.drive.ty - this.y) * kf;
+      this.nx = clamp(this.x / window.innerWidth, -0.1, 1.1);
+      this.ny = clamp(this.y / window.innerHeight, -0.1, 1.1);
+    }
+
     // the idle bob fades out when you grab, instead of snapping off
     this.calm += ((this.grabbed ? 0 : 1) - this.calm) * Math.min(1, dt * 5);
     this.scale += (this.scaleTarget - this.scale) * Math.min(1, dt * 11);
@@ -306,7 +322,8 @@ export class Puppet {
     const calm = this.calm;
     const bobX = Math.sin(time * 0.00085 + this.phase) * 5 * calm;
     const bobY = Math.cos(time * 0.00125 + this.phase * 1.7) * 7 * calm;
-    const deg = this.rot + (this.spinAngle * 180) / Math.PI;
+    const tiltDeg = this.drive && this.drive.active ? this.drive.tilt * 34 : 0;
+    const deg = this.rot + tiltDeg + (this.spinAngle * 180) / Math.PI;
     this.applyTransform(this.lx + bobX, this.ly + bobY, deg);
   }
 
