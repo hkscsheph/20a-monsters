@@ -8,6 +8,7 @@
 import { Puppet } from './puppet.js';
 import { RigPuppet } from './rig-puppet.js';
 import { Camera } from './camera.js';
+import { Choreographer } from './follow.js';
 import { Sfx } from './audio.js';
 import { webglSupported } from './rig.js';
 import skeleton from './rigs.js';
@@ -32,6 +33,7 @@ const introEl   = document.getElementById('intro');
 
 const camera = new Camera(video);
 const sfx = new Sfx();
+const follow = new Choreographer();
 
 const state = {
   w: window.innerWidth,
@@ -41,7 +43,8 @@ const state = {
   handGrabs: new Map(),          // hand id → puppet
   active: null,                  // puppet with visible strings
   look: { x: 0, y: 0, at: 0 },   // last cursor position
-  mode: 'shadow',
+  mode: 'spirit',                // shadow | spirit — follow mode starts lit
+  playMode: 'follow',            // follow (camera drives) | puppet (you drive)
   rigged: false,
   started: false,
   lastT: 0,
@@ -307,6 +310,16 @@ function updateGestures(dt) {
     if (p.grabbed) excite += 0.55;
     if (state.active === p) excite += 0.1;
 
+    // follow mode: the monster watches the person who is driving it, and
+    // perks up when they move about
+    const who = state.playMode === 'follow' ? p.drivePerson : null;
+    if (who) {
+      focus = { x: who.x, y: who.y - 90 };
+      wave = 0;
+      pet = 0;
+      excite = Math.min(1, 0.1 + who.energy * 0.8 + (p.grabbed ? 0.35 : 0));
+    }
+
     p.setContext({ focus, wave, excite: Math.min(1, excite), pet, dt });
   }
 }
@@ -391,7 +404,13 @@ function frame(t) {
   state.lastT = t;
   const dt = clamp(elapsed / 1000, 0.001, 1 / 30);
 
-  if (camera.handsOn) camera.update(t, state.w, state.h);
+  if (camera.on) camera.update(t, state.w, state.h);
+
+  // follow mode: hand the people on camera to the monsters
+  const people = state.playMode === 'follow' && camera.poseOn ? camera.persons : [];
+  follow.update(people, state.puppets, state.w, state.h, dt);
+  if (camera.poseOn) updatePeopleStatus();
+
   syncHands(dt);
   updateGestures(dt);
 
@@ -407,6 +426,8 @@ function frame(t) {
 /* ------------------------------------------------------------------ ui */
 
 const btnCam = document.getElementById('btnCam');
+const btnMode = document.getElementById('btnMode');
+const btnModeLabel = document.getElementById('btnModeLabel');
 const btnLight = document.getElementById('btnLight');
 const btnLightLabel = document.getElementById('btnLightLabel');
 const btnHands = document.getElementById('btnHands');
@@ -420,21 +441,38 @@ function setPressed(btn, on) {
   btn.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
+function trackingStatus() {
+  if (camera.poseOn) {
+    const n = camera.persons.length;
+    return n ? `${n} ${n === 1 ? 'person' : 'people'}` : 'nobody in frame';
+  }
+  if (camera.poseLoading) return 'loading body tracking';
+  if (camera.handsOn) return 'hands live';
+  if (camera.handsLoading) return 'hands loading';
+  return 'hands off';
+}
+
+function updatePeopleStatus() {
+  const text = trackingStatus();
+  if (statusHands.textContent !== text) {
+    statusHands.textContent = text;
+    statusHands.classList.toggle('on', camera.persons.length > 0 || camera.handsOn);
+  }
+}
+
 function syncUI() {
   setPressed(btnCam, camera.on);
   setPressed(btnLight, state.mode === 'spirit');
   setPressed(btnHands, camera.handsOn);
   setPressed(btnSound, sfx.enabled);
+  setPressed(btnMode, state.playMode === 'follow');
   btnLightLabel.textContent = state.mode === 'spirit' ? 'Spirit' : 'Shadow';
+  btnModeLabel.textContent = state.playMode === 'follow' ? 'Follow' : 'Puppet';
   btnSoundLabel.textContent = sfx.enabled ? 'Sound on' : 'Sound off';
   statusCam.textContent = camera.on ? 'camera live' : 'camera off';
   statusCam.classList.toggle('on', camera.on);
-  statusHands.textContent = camera.handsOn
-    ? 'hands live'
-    : camera.handsLoading
-      ? 'hands loading'
-      : 'hands off';
-  statusHands.classList.toggle('on', camera.handsOn);
+  statusHands.textContent = trackingStatus();
+  statusHands.classList.toggle('on', camera.persons.length > 0 || camera.handsOn);
 }
 
 async function enableCamera() {
@@ -442,6 +480,7 @@ async function enableCamera() {
   try {
     await camera.start();
     stage.classList.remove('no-cam');
+    if (state.playMode === 'follow') enablePeople();
   } catch (err) {
     stage.classList.add('no-cam');
     toast(
@@ -487,11 +526,52 @@ async function toggleHands() {
   }
 }
 
-function toggleLight() {
-  state.mode = state.mode === 'shadow' ? 'spirit' : 'shadow';
+function setLight(mode) {
+  state.mode = mode === 'spirit' ? 'spirit' : 'shadow';
   stage.classList.toggle('spirit', state.mode === 'spirit');
   for (const p of state.puppets) if (p.setMode) p.setMode(state.mode);
   syncUI();
+}
+
+function toggleLight() {
+  setLight(state.mode === 'shadow' ? 'spirit' : 'shadow');
+}
+
+/* ---- play modes: follow (camera drives) vs puppet (you drive) ---- */
+
+async function enablePeople() {
+  if (!camera.on || camera.poseOn || camera.poseLoading) return;
+  btnMode.classList.add('busy');
+  try {
+    await camera.enablePose();
+    toast('Watching the room. Tilt your head, lean and raise your arms.', 4600);
+  } catch (err) {
+    toast('Body tracking needs an internet connection the first time. You can still drag the monsters.', 5200);
+  } finally {
+    btnMode.classList.remove('busy');
+    syncUI();
+  }
+}
+
+function setPlayMode(mode, announce = true) {
+  const next = mode === 'puppet' ? 'puppet' : 'follow';
+  if (state.playMode === next && announce) {
+    toast(next === 'follow' ? 'Already in follow mode.' : 'Already in puppet mode.');
+    return;
+  }
+  state.playMode = next;
+  // the follow stage is lit like a spirit show
+  if (next === 'follow') setLight('spirit');
+  syncUI();
+
+  if (!announce) return;
+  if (next === 'follow') {
+    if (!camera.on) toast('Follow mode. Turn the camera on and the monsters copy you.', 4200);
+    else if (!camera.poseOn) enablePeople();
+    else toast('Follow mode: they copy your head tilt, lean and arms.', 3600);
+  } else {
+    toast('Puppet mode: drag a monster, or pinch in the air to pick one up.', 3800);
+  }
 }
 
 function resetStage() {
@@ -529,6 +609,7 @@ function wire() {
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
 
   btnCam.addEventListener('click', () => (camera.on ? disableCamera() : enableCamera()));
+  btnMode.addEventListener('click', () => setPlayMode(state.playMode === 'follow' ? 'puppet' : 'follow'));
   btnLight.addEventListener('click', toggleLight);
   btnHands.addEventListener('click', toggleHands);
   btnSound.addEventListener('click', toggleSound);
@@ -538,12 +619,19 @@ function wire() {
     e.currentTarget.blur();
     hideIntro();
     await enableCamera();
-    if (camera.on) toast('Camera live. Raise a hand and wave.', 3200);
+    if (camera.on) {
+      toast(
+        state.playMode === 'follow'
+          ? 'Camera live. Stand in front of it — the monsters copy your moves.'
+          : 'Camera live. Raise a hand and wave.',
+        3600,
+      );
+    }
   });
   document.getElementById('btnStartNoCam').addEventListener('click', (e) => {
     e.currentTarget.blur();
     hideIntro();
-    toast('No camera — move the cursor and the monsters will watch it.', 3600);
+    toast('No camera — the monsters will idle. Tap Puppet (F) to take the strings yourself.', 4200);
   });
 
   window.addEventListener('keydown', (e) => {
@@ -552,6 +640,7 @@ function wire() {
     if (k === 'c') camera.on ? disableCamera() : enableCamera();
     else if (k === 'h') toggleHands();
     else if (k === 's') toggleLight();
+    else if (k === 'f') setPlayMode(state.playMode === 'follow' ? 'puppet' : 'follow');
     else if (k === 'm') toggleSound();
     else if (k === 'r') resetStage();
     else if (k === 'escape') hideIntro();
@@ -589,6 +678,7 @@ function hideIntro() {
 /* ----------------------------------------------------------------- boot */
 
 async function boot() {
+  stage.classList.toggle('spirit', state.mode === 'spirit');
   wire();
   try {
     await buildPuppets();

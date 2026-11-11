@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0806" />
 <title>Monster Shadow Theatre</title>
-<meta name="description" content="Four paper monsters you can drag around like shadow puppets, over your own camera image." />
+<meta name="description" content="Four paper monsters over your camera image: they copy the head tilts and body gestures of up to four people, or you can drag them like shadow puppets." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230c0a09'/%3E%3Ccircle cx='11' cy='14' r='3' fill='%23ffcf8b'/%3E%3Ccircle cx='21' cy='14' r='3' fill='%23ffcf8b'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -42,10 +42,13 @@
   </header>
 
   <p id="hint" class="hint">
-    <strong>Drag</strong> a monster &middot; move to be looked at &middot; <strong>double&#8209;tap</strong> to spin
+    <strong>Follow</strong> the camera &middot; tilt, lean, raise an arm &middot; <strong>F</strong> to take the strings yourself
   </p>
 
   <nav class="bar" aria-label="Controls">
+    <button class="btn" id="btnMode" type="button" aria-pressed="true" title="Follow (F): the camera moves them &middot; Puppet: you do">
+      <span class="dot"></span><span class="label" id="btnModeLabel">Follow</span>
+    </button>
     <button class="btn" id="btnCam" type="button" aria-pressed="false" title="Camera (C)">
       <span class="dot"></span><span class="label">Camera</span>
     </button>
@@ -69,12 +72,13 @@
       <h2 id="introTitle">Monster<br />Shadow Theatre</h2>
       <p class="lede">
         Turn on your camera and the room becomes a lit screen. The four creatures are
-        rigged like little 2D actors — they breathe, blink, and their heads follow your
-        hands. Pick one up, fling it, and it swings on its strings.
+        rigged like little 2D actors — they breathe, blink, and copy the people in front
+        of the camera. Tilt your head, lean, raise an arm and they do the same. Pick one
+        up, fling it, and it swings on its strings.
       </p>
       <ul class="tips">
-        <li><b>Wave</b> at a monster and it waves back</li>
-        <li><b>Pinch</b> in the air to grab one, drag with mouse or finger</li>
+        <li><b>Follow mode</b> — up to four people, one monster each (one person gets all four)</li>
+        <li><b>Puppet mode</b> — wave, pinch and drag to move them yourself</li>
         <li><b>Scroll</b> to resize, <b>double-tap</b> to make it spin</li>
       </ul>
       <div class="actions">

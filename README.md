@@ -2,7 +2,8 @@
 
 Four drawn monsters that behave like **shadow puppets on strings**, hanging in front of
 your webcam image. Each one is a **rigged 2D character** — bones, a skinned mesh, a
-blinking face and a tail — that reacts to gestures picked up by the camera.
+blinking face and a tail. By default they **copy the people in front of the camera**:
+up to four of you, each controlling one monster (or all four, if you are on your own).
 
 ![monsters](assets/monster1.png)
 
@@ -21,10 +22,21 @@ Then open <http://localhost:8000>.
 > The camera needs a secure context: `localhost` works, and any HTTPS host works.
 > Serving over plain HTTP from another machine will block `getUserMedia`.
 
+## Two modes
+
+| Mode | What drives them |
+| --- | --- |
+| **Follow** (default) | The people on camera: head tilt, head turn, torso lean, raised arms. Up to four people; one person controls all four monsters, two people get two each, three get 2+1+1, four get one each. The stage is lit in *spirit* colours. |
+| **Puppet** | You: drag, wave, pinch. The classic hand-driven theatre. |
+
+Switch with the **Follow / Puppet** button or `F`. The camera (and body tracking) is
+turned on automatically the first time you press *Start with camera* in follow mode.
+
 ## What you can do
 
 | Gesture | Result |
 | --- | --- |
+| Stand in front of the camera | Your monster drifts with you, copies your head tilt, lean and arms |
 | Move your hand (or the cursor) | Nearby monsters turn their heads to watch it |
 | Open hand + wave | The nearest monster waves back and grins |
 | Pinch in the air | Grab that monster; it reaches, flails and swings while held |
@@ -82,11 +94,12 @@ js/puppet.js      spring physics, render transform, alpha hit-test (also the no-
 js/rig.js         mesh + bone rig, skin weights, pose solve, WebGL renderer
 js/rigs.js        per-monster skeletons traced from the drawings
 js/rig-puppet.js  procedural performance: breathing, head tracking, waves, tail, blinks
-js/camera.js      webcam + MediaPipe hands + pinch / open-hand / wave detection
+js/follow.js      follow mode: splits people across monsters, eases tilt / lean / arms onto them
+js/camera.js      webcam + MediaPipe hands (pinch, wave) and pose (up to 4 people)
 js/audio.js       tiny synthesised grab / pluck / spin sounds
 assets/           the four drawings
 ```
 
-Hand tracking is optional and loaded on demand from a CDN (MediaPipe Tasks Vision); it
-needs an internet connection the first time and falls back to mouse/touch dragging if it
-cannot load. Video frames never leave the browser — they are only painted on this page.
+Body and hand tracking are optional and loaded on demand from a CDN (MediaPipe Tasks
+Vision); both need an internet connection the first time and the stage falls back to
+mouse/touch dragging and idle animation if they cannot load. Video frames never leave the browser — they are only painted on this page.
