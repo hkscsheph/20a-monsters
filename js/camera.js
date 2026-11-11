@@ -30,6 +30,8 @@ export class Camera {
     this.on = false;
     this._hist = new Map();     // hand id → recent x positions (wave detection)
     this._pinch = new Map();    // hand id → pinch hysteresis state
+    this._prevHands = [];       // last frame's hands, for stable ids
+    this._nextHandId = 1;
 
     this.landmarker = null;
     this.handsOn = false;
@@ -143,6 +145,7 @@ export class Camera {
 
     const out = [];
     const seen = new Set();
+    const claimed = new Set();
     const landmarks = result.landmarks || [];
 
     for (let i = 0; i < landmarks.length; i += 1) {
@@ -150,12 +153,24 @@ export class Camera {
       if (!lm || lm.length < 21) continue;
 
       const label = result.handednesses?.[i]?.[0]?.categoryName || `hand${i}`;
-      const id = `${label}-${i}`;
-      seen.add(id);
 
       // palm centre
       const palm = lm[9];
       const p = this.toStage(palm.x, palm.y, stageW, stageH);
+
+      // Landmark order can shuffle between frames, so inherit the id of the
+      // closest hand from last frame. Without this, two hands swap identities
+      // and whatever they are holding gets dropped and grabbed again.
+      let id = null;
+      let bestD = 190;
+      for (const ph of this._prevHands) {
+        if (claimed.has(ph.id)) continue;
+        const d = Math.hypot(ph.x - p.x, ph.y - p.y);
+        if (d < bestD) { bestD = d; id = ph.id; }
+      }
+      if (!id) id = `hand-${this._nextHandId++}`;
+      claimed.add(id);
+      seen.add(id);
 
       const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
       const palmSize = Math.max(0.001, dist(lm[0], lm[9]));
@@ -175,13 +190,28 @@ export class Camera {
       }
       const open = extended >= 3;
 
+      // smoothing with a dead zone: tracking noise under ~1px is ignored
+      // (it used to show up as a shiver on whatever the monster was holding)
       const prev = this._smooth.get(id);
-      const k = 0.55;
-      const x = prev ? prev.x + (p.x - prev.x) * k : p.x;
-      const y = prev ? prev.y + (p.y - prev.y) * k : p.y;
-      const vx = prev ? (x - prev.x) * 60 : 0;
-      const vy = prev ? (y - prev.y) * 60 : 0;
-      this._smooth.set(id, { x, y });
+      let x = p.x;
+      let y = p.y;
+      let vx = 0;
+      let vy = 0;
+      if (prev) {
+        const dt = Math.max(0.008, (stamp - prev.t) / 1000);
+        const dx = p.x - prev.x;
+        const dy = p.y - prev.y;
+        if (Math.hypot(dx, dy) < 1.2) {
+          x = prev.x;
+          y = prev.y;
+        } else {
+          x = prev.x + dx * 0.6;
+          y = prev.y + dy * 0.6;
+        }
+        vx = (x - prev.x) / dt;
+        vy = (y - prev.y) / dt;
+      }
+      this._smooth.set(id, { x, y, t: stamp });
 
       // waving: count sideways reversals over the last second
       const hist = this._hist.get(id) || [];
@@ -218,6 +248,7 @@ export class Camera {
       if (!seen.has(key)) { this._smooth.delete(key); this._hist.delete(key); this._pinch.delete(key); }
     }
 
+    this._prevHands = out.map((h) => ({ id: h.id, x: h.x, y: h.y }));
     this.hands = out;
     return out;
   }

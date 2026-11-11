@@ -32,6 +32,13 @@ export class RigPuppet extends Puppet {
     this.mode = 'shadow';
     this.firstDraw = true;
     this.pet = 0;
+    this.focusSmooth = null;
+    this.lookW = 0;        // how much of the gaze is on the focus (0 = idle)
+    this.yawS = 0;         // speed-limited gaze (never snaps between targets)
+    this.pitchS = 0;
+    this.holdW = 0;        // eased "being held" factor
+    this.reachAmt = 0;     // eased arm reach toward the focus
+    this._lastPoseT = 0;
   }
 
   /* ---- canvas instead of stacked pictures ---- */
@@ -71,6 +78,13 @@ export class RigPuppet extends Puppet {
     this.excite += ((ctx.excite || 0) - this.excite) * k;
     this.pet += ((ctx.pet || 0) - this.pet) * k;
     this.focus = ctx.focus || null;
+  }
+
+  /** seconds since the previous pose, so smoothing is frame-rate independent */
+  poseDt(time) {
+    const dt = this._lastPoseT ? Math.min(0.05, Math.max(0, (time - this._lastPoseT) / 1000)) : 0.016;
+    this._lastPoseT = time;
+    return dt;
   }
 
   update(dt, time, stageW, stageH) {
@@ -122,29 +136,55 @@ export class RigPuppet extends Puppet {
     const c = this.char;
     const t = time * 0.001;
     const ph = this.phase;
+    const dtp = this.poseDt(time);
     const u = rig.H / 768;                       // image-scale unit
     const idle = c.idle ?? 1;
     const speed = clamp(Math.hypot(this.lvx, this.lvy) / 1100, 0, 1);
     const lean = clamp(this.lvx * 0.00026, -0.24, 0.24);
     const sink = clamp(this.lvy * 0.00012, -0.08, 0.12);
     const excited = clamp(this.excite + this.wave * 0.6, 0, 1);
-    const held = this.grabbed ? 1 : 0;
+    // grabbing used to snap every held-driven bone at once; ease it instead
+    this.holdW += ((this.grabbed ? 1 : 0) - this.holdW) * Math.min(1, dtp * 7);
+    const held = this.holdW;
 
-    // where to look: a hand, the cursor, or just the audience
-    let yaw;
-    let pitch;
-    let focusImage = null;
-    if (this.focus) {
-      const s = this.w / rig.W || 1;
-      const dx = (this.focus.x - this.lx) / s;
-      const dy = (this.focus.y - this.ly) / s;
-      yaw = clamp(dx / 260, -1, 1);
-      pitch = clamp(dy / 300, -1, 1);
-      focusImage = { x: rig.W / 2 + dx, y: rig.H * this.grip + dy };
-    } else {
-      yaw = Math.sin(t * 0.45 + ph) * 0.5;
-      pitch = Math.sin(t * 0.29 + ph * 1.7) * 0.25;
+    // where to look: a hand, the cursor, or just the audience.
+    // The focus point is chased rather than snapped to, and the gaze
+    // cross-fades between "watching something" and the idle wander, so
+    // switching target (hand → cursor → nothing) never jerks the head.
+    const hasFocus = Boolean(this.focus);
+    if (hasFocus) {
+      if (!this.focusSmooth) this.focusSmooth = { x: this.focus.x, y: this.focus.y };
+      const kf = Math.min(1, dtp * 6.5);
+      this.focusSmooth.x += (this.focus.x - this.focusSmooth.x) * kf;
+      this.focusSmooth.y += (this.focus.y - this.focusSmooth.y) * kf;
     }
+    this.lookW += ((hasFocus ? 1 : 0) - this.lookW) * Math.min(1, dtp * 2.8);
+
+    let focusYaw = 0;
+    let focusPitch = 0;
+    let focusImage = null;
+    if (this.focusSmooth) {
+      const s = this.w / rig.W || 1;
+      const dx = (this.focusSmooth.x - this.lx) / s;
+      const dy = (this.focusSmooth.y - this.ly) / s;
+      focusYaw = clamp(dx / 260, -1, 1);
+      focusPitch = clamp(dy / 300, -1, 1);
+      // keep a target even after the focus is gone, so the arm eases home
+      focusImage = { x: rig.W / 2 + dx, y: rig.H * this.grip + dy };
+    }
+    const idleYaw = Math.sin(t * 0.45 + ph) * 0.5;
+    const idlePitch = Math.sin(t * 0.29 + ph * 1.7) * 0.25;
+    const yawTarget = idleYaw + (focusYaw - idleYaw) * this.lookW;
+    const pitchTarget = idlePitch + (focusPitch - idlePitch) * this.lookW;
+
+    // Even with the point smoothed, a target that jumps (hand → cursor → idle)
+    // moves the first frame a lot. Limit the angular speed so the head always
+    // turns at a believable rate instead of flicking.
+    const maxRate = 2.6 * dtp;
+    this.yawS += clamp(yawTarget - this.yawS, -maxRate, maxRate);
+    this.pitchS += clamp(pitchTarget - this.pitchS, -maxRate, maxRate);
+    const yaw = this.yawS;
+    const pitch = this.pitchS;
 
     rig.resetPose();
 
@@ -181,6 +221,8 @@ export class RigPuppet extends Puppet {
 
     // --- arms: wave back, reach for a nearby hand, flail when held ---
     const shouldReach = !held && this.wave < 0.25 && this.focus && speed < 0.6;
+    // reaching used to start and stop dead, snapping the arm up and down
+    this.reachAmt += ((shouldReach ? 1 : 0) - this.reachAmt) * Math.min(1, dtp * 4.5);
     for (const side of ['L', 'R']) {
       const arm = `arm${side}`;
       const fore = `fore${side}`;
@@ -198,9 +240,9 @@ export class RigPuppet extends Puppet {
         rot += lift * (0.45 + 0.35 * waveAmt);
         rot += Math.sin(t * 9.5 + ph + (side === 'R' ? Math.PI : 0)) * 0.32 * waveAmt;
       }
-      if (shouldReach) {
+      if (this.reachAmt > 0.002) {
         const reach = this.armReach(arm, focusImage);
-        rot += reach * 0.55;
+        rot += reach * 0.55 * this.reachAmt;
       }
       if (held) {
         rot += Math.sin(t * 13 + ph + (side === 'L' ? 0 : 2)) * 0.22 + 0.12 * sideSign;
@@ -238,6 +280,7 @@ export class RigPuppet extends Puppet {
   render(time) {
     if (!this.renderer || !this.renderer.ok) return;
 
+    this.applyReveal(time);
     this.pose(time);
     this.rig.solve();
     this.rig.skin();
@@ -245,10 +288,10 @@ export class RigPuppet extends Puppet {
 
     if (this.firstDraw) {
       this.firstDraw = false;
-      this.el.style.opacity = '1';
+      if (!this.revealAt) this.el.style.opacity = '1';
     }
 
-    const calm = this.grabbed ? 0 : 1;
+    const calm = this.calm;
     const bobX = Math.sin(time * 0.00085 + this.phase) * 4 * calm;
     const bobY = Math.cos(time * 0.00125 + this.phase * 1.7) * 5 * calm;
     const deg = this.rot + (this.spinAngle * 180) / Math.PI;

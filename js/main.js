@@ -121,14 +121,14 @@ async function buildPuppets() {
     }
   }
 
-  layoutPuppets();
+  layoutPuppets(true);
 }
 
-function layoutPuppets() {
+function layoutPuppets(snap = false) {
   state.w = window.innerWidth;
   state.h = window.innerHeight;
   const base = baseHeight();
-  for (const p of state.puppets) p.layout(state.w, state.h, base * p.size);
+  for (const p of state.puppets) p.layout(state.w, state.h, base * p.size, snap);
 }
 
 function pick(px, py, slack = 10) {
@@ -209,7 +209,7 @@ function onWheel(e) {
   const p = pick(e.clientX, e.clientY, 8);
   if (!p) return;
   e.preventDefault();
-  p.scale = clamp(p.scale * (e.deltaY > 0 ? 0.94 : 1.06), 0.45, 2.4);
+  p.scaleTarget = clamp(p.scaleTarget * (e.deltaY > 0 ? 0.94 : 1.06), 0.45, 2.4);
   state.active = p;
 }
 
@@ -226,7 +226,8 @@ function onDoubleClick(e) {
 
 function syncHands(dt) {
   const seen = new Set();
-  const hands = camera.handsOn ? camera.hands : [];
+  // stable order, so a ring never hops to the other hand between frames
+  const hands = (camera.handsOn ? camera.hands : []).slice(0, 2).sort((a, b) => (a.id < b.id ? -1 : 1));
 
   for (const hand of hands) {
     seen.add(hand.id);
@@ -251,7 +252,7 @@ function syncHands(dt) {
         }
       }
     } else if (grabbed) {
-      grabbed.release();
+      grabbed.release(hand.vx, hand.vy);
       state.handGrabs.delete(hand.id);
       sfx.pluck(200 + Math.random() * 90);
     }
@@ -259,7 +260,7 @@ function syncHands(dt) {
 
   for (const [id, p] of [...state.handGrabs]) {
     if (!seen.has(id)) {
-      p.release();
+      p.release();  // the hand vanished: let go gently
       state.handGrabs.delete(id);
       if (state.active === p) state.active = null;
     }
@@ -269,7 +270,8 @@ function syncHands(dt) {
 /* ------------------------------------------------------------ gestures */
 
 function updateGestures(dt) {
-  const hands = camera.handsOn ? camera.hands : [];
+  // stable order, so a ring never hops to the other hand between frames
+  const hands = (camera.handsOn ? camera.hands : []).slice(0, 2).sort((a, b) => (a.id < b.id ? -1 : 1));
   const now = performance.now();
   const cursorFresh = now - state.look.at < 2600 && !state.look.pointerNone;
   const grabbing = hands.filter((h) => h.pinch).length;
@@ -338,7 +340,9 @@ function updateRig() {
   const lines = stringsEl.children;
   const p = state.active;
 
-  if (p && (p.grabbed || stage.classList.contains('grabbable'))) {
+  // Strings only while something is actually held: hopping them between
+  // monsters on hover was one of the jumpier moments.
+  if (p && p.grabbed) {
     const gx = p.lx;
     const gy = p.ly;
     const spread = Math.max(70, p.w * 0.5);
@@ -359,7 +363,8 @@ function updateRig() {
   }
 
   const circles = handsEl.children;
-  const hands = camera.handsOn ? camera.hands : [];
+  // stable order, so a ring never hops to the other hand between frames
+  const hands = (camera.handsOn ? camera.hands : []).slice(0, 2).sort((a, b) => (a.id < b.id ? -1 : 1));
   for (let i = 0; i < 2; i += 1) {
     const ring = circles[i * 2];
     const core = circles[i * 2 + 1];
@@ -492,8 +497,7 @@ function toggleLight() {
 function resetStage() {
   for (const p of state.puppets) {
     p.release();
-    p.goHome();
-    p.scale = 1;
+    p.goHome();   // eases home and eases the size back, no teleport
   }
   state.handGrabs.clear();
   state.pointer = null;
@@ -575,9 +579,10 @@ function hideIntro() {
   hintEl.classList.add('show');
   setTimeout(() => hintEl.classList.remove('show'), 12000);
 
-  // curtains up: the monsters drop onto their marks, one after another
+  // curtains up: the monsters drop onto their marks one after another, once
+  // the intro overlay has faded out, so the hop to the drop position is unseen
   state.puppets.forEach((p, i) => {
-    setTimeout(() => p.dropIn(), 380 + i * 110);
+    setTimeout(() => p.dropIn(), 760 + i * 130);
   });
 }
 
